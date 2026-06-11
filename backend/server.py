@@ -358,8 +358,15 @@ async def _get_rate_to(from_cur: str, to_cur: str, snapshot: dict) -> float:
     return 1.0
 
 
+BASE_CURRENCY = "IDR"
+
+
 def _compute_subtotal_sync(items: list, snapshot: dict, total_currency: str) -> tuple:
-    """Compute (subtotal_in_total_currency, subtotal_by_currency_dict)."""
+    """Compute (subtotal_in_total_currency, subtotal_by_currency_dict).
+
+    Snapshot semantics: snapshot[cur] = "1 unit of cur in IDR" (base currency).
+    Conversion: amount_in_total = sum(amount_in_cur * snapshot[cur]) / snapshot[total]
+    """
     by_cur: dict = {}
     for it in items:
         qty = float(it.get("quantity") or 0)
@@ -368,14 +375,16 @@ def _compute_subtotal_sync(items: list, snapshot: dict, total_currency: str) -> 
         amount = qty * price
         by_cur[cur] = round(by_cur.get(cur, 0) + amount, 2)
 
-    sub = 0.0
-    total_cur_upper = total_currency.upper()
-    for cur, amt in by_cur.items():
-        if cur == total_cur_upper:
-            sub += amt
-        else:
-            sub += amt * float(snapshot.get(cur, 1))
-    return round(sub, 2), by_cur
+    def rate_to_base(cur: str) -> float:
+        if cur == BASE_CURRENCY:
+            return 1.0
+        r = float(snapshot.get(cur, 0) or 0)
+        return r or 1.0
+
+    subtotal_in_base = sum(amt * rate_to_base(cur) for cur, amt in by_cur.items())
+    total_rate = rate_to_base(total_currency.upper())
+    subtotal = subtotal_in_base / total_rate if total_rate else subtotal_in_base
+    return round(subtotal, 2), by_cur
 
 
 async def _generate_invoice_number(client_id: str, when: datetime) -> str:
@@ -443,21 +452,24 @@ async def create_invoice(payload: InvoiceCreate, current=Depends(get_current_use
         raise HTTPException(409, f"Invoice number {invoice_number} already exists")
 
     items = [it.model_dump() if isinstance(it, InvoiceItem) else it for it in payload.items]
-    snapshot = payload.exchange_rates or {}
+    snapshot = {k.upper(): float(v) for k, v in (payload.exchange_rates or {}).items()}
+    snapshot[BASE_CURRENCY] = 1.0  # base is always 1
 
-    # Validate snapshot: ensure all currencies in items + total_currency are in snapshot
+    # Ensure rates exist for total_currency and all item currencies (relative to IDR base).
     needed = {payload.total_currency.upper()} | {(it.get("currency") or "USD").upper() for it in items}
-    missing = [c for c in needed if c not in {k.upper() for k in snapshot.keys()}]
-    if missing:
-        # Try to auto-populate from DB rates relative to total_currency
-        total_cur = payload.total_currency.upper()
-        snapshot = {k.upper(): float(v) for k, v in snapshot.items()}
-        snapshot[total_cur] = 1.0
-        for cur in needed:
-            if cur not in snapshot:
-                snapshot[cur] = await _get_rate_to(cur, total_cur, {})
-    else:
-        snapshot = {k.upper(): float(v) for k, v in snapshot.items()}
+    for cur in needed:
+        if cur == BASE_CURRENCY:
+            snapshot[cur] = 1.0
+            continue
+        if cur not in snapshot or not snapshot[cur]:
+            # Look up DB: from_currency=cur, to_currency=IDR (i.e., "1 cur = X IDR")
+            rec = await db.exchange_rates.find_one(
+                {"from_currency": cur, "to_currency": BASE_CURRENCY}
+            )
+            if rec:
+                snapshot[cur] = float(rec["rate"])
+            else:
+                snapshot[cur] = 1.0
 
     subtotal, subtotal_by_currency = _compute_subtotal_sync(items, snapshot, payload.total_currency)
     tax_amount = round(subtotal * (payload.tax_percent or 0) / 100.0, 2)
@@ -521,10 +533,16 @@ async def update_invoice(invoice_id: str, payload: InvoiceUpdate, _=Depends(requ
     snapshot = {k.upper(): float(v) for k, v in (merged.get("exchange_rates") or {}).items()}
     total_cur = (merged.get("total_currency") or "USD").upper()
     needed = {total_cur} | {(it.get("currency") or "USD").upper() for it in items}
-    snapshot[total_cur] = 1.0
+    snapshot[BASE_CURRENCY] = 1.0
     for cur in needed:
-        if cur not in snapshot:
-            snapshot[cur] = await _get_rate_to(cur, total_cur, {})
+        if cur == BASE_CURRENCY:
+            snapshot[cur] = 1.0
+            continue
+        if cur not in snapshot or not snapshot[cur]:
+            rec = await db.exchange_rates.find_one(
+                {"from_currency": cur, "to_currency": BASE_CURRENCY}
+            )
+            snapshot[cur] = float(rec["rate"]) if rec else 1.0
 
     subtotal, subtotal_by_currency = _compute_subtotal_sync(items, snapshot, total_cur)
     tax_amount = round(subtotal * float(merged.get("tax_percent") or 0) / 100.0, 2)

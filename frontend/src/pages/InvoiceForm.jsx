@@ -81,7 +81,11 @@ export default function InvoiceForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Ensure exchange_rates has entries for total_currency and all item currencies
+  // BASE currency for invoice exchange rates — all rates are stored as "1 [cur] = X IDR".
+  // This matches natural Indonesian thinking ("1 USD = 16,500 IDR").
+  const BASE = "IDR";
+
+  // Ensure exchange_rates has entries for total_currency and all item currencies (relative to BASE=IDR)
   useEffect(() => {
     const total = form.total_currency.toUpperCase();
     const needed = new Set([total]);
@@ -89,29 +93,18 @@ export default function InvoiceForm() {
 
     setForm((prev) => {
       const rates = { ...prev.exchange_rates };
-      rates[total] = 1;
+      rates[BASE] = 1; // 1 IDR = 1 IDR
       needed.forEach((cur) => {
-        if (!(cur in rates)) {
-          // look up from serverRates: rate from cur -> total
-          const direct = serverRates.find(
-            (r) => r.from_currency === cur && r.to_currency === total
+        if (cur === BASE) {
+          rates[cur] = 1;
+          return;
+        }
+        if (!(cur in rates) || !rates[cur]) {
+          // Look up "cur -> IDR" from server rates
+          const found = serverRates.find(
+            (r) => r.from_currency === cur && r.to_currency === BASE
           );
-          if (direct) {
-            rates[cur] = direct.rate;
-          } else {
-            // try inverse via IDR pivot or just default 1
-            const curToIdr = serverRates.find(
-              (r) => r.from_currency === cur && r.to_currency === "IDR"
-            );
-            const totalToIdr = serverRates.find(
-              (r) => r.from_currency === total && r.to_currency === "IDR"
-            );
-            if (curToIdr && totalToIdr && totalToIdr.rate) {
-              rates[cur] = curToIdr.rate / totalToIdr.rate;
-            } else {
-              rates[cur] = cur === total ? 1 : 1;
-            }
-          }
+          rates[cur] = found ? found.rate : 1;
         }
       });
       return { ...prev, exchange_rates: rates };
@@ -119,7 +112,7 @@ export default function InvoiceForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.total_currency, JSON.stringify(form.items.map((i) => i.currency)), serverRates]);
 
-  // Computed totals
+  // Computed totals — base currency is IDR. Each rate[cur] means "1 cur = X IDR".
   const computed = useMemo(() => {
     const total = form.total_currency.toUpperCase();
     // Per-currency subtotals (in each item's native currency)
@@ -129,16 +122,17 @@ export default function InvoiceForm() {
       const amount = (Number(it.quantity) || 0) * (Number(it.price) || 0);
       byCurrency[cur] = (byCurrency[cur] || 0) + amount;
     });
-    // Converted subtotal in total_currency
-    let subtotal = 0;
+    const rateToBase = (cur) => {
+      if (cur === BASE) return 1;
+      const r = Number(form.exchange_rates[cur]) || 0;
+      return r || 1;
+    };
+    // Sum everything in IDR (base), then convert to total_currency.
+    let subtotalInBase = 0;
     Object.entries(byCurrency).forEach(([cur, amt]) => {
-      if (cur === total) {
-        subtotal += amt;
-      } else {
-        const r = Number(form.exchange_rates[cur]) || 0;
-        subtotal += amt * r;
-      }
+      subtotalInBase += amt * rateToBase(cur);
     });
+    const subtotal = subtotalInBase / rateToBase(total);
     const tax = (subtotal * (Number(form.tax_percent) || 0)) / 100;
     const grand = subtotal + tax - (Number(form.discount_amount) || 0);
     return { subtotal, tax, grand, byCurrency };
@@ -440,26 +434,37 @@ export default function InvoiceForm() {
           <div className="flex items-baseline justify-between mb-3">
             <h3 className="font-display font-bold text-sm text-slate-900">Exchange Rates</h3>
             <span className="text-[10px] uppercase tracking-widest text-slate-500">
-              1 unit = how many {form.total_currency}?
+              Base: {BASE} · 1 [cur] = X {BASE}
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {usedCurrencies.map((cur) => (
-              <div key={cur} className="flex items-center gap-3">
-                <div className="text-xs font-mono font-bold text-slate-700 w-12 tabular-nums">{cur}</div>
-                <div className="text-xs text-slate-400">→</div>
-                <input
-                  data-testid={`rate-${cur}`}
-                  type="number"
-                  step="0.0001"
-                  value={form.exchange_rates[cur] ?? 1}
-                  onChange={(e) => setRate(cur, e.target.value)}
-                  disabled={cur === form.total_currency}
-                  className="flex-1 px-3 py-2 border border-slate-300 rounded-sm text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-[#0B1E36] disabled:bg-slate-50 disabled:text-slate-400"
-                />
-                <div className="text-xs text-slate-500 font-mono w-12">{form.total_currency}</div>
-              </div>
-            ))}
+          {usedCurrencies.filter((c) => c !== BASE).length === 0 ? (
+            <div className="text-xs text-slate-500 py-4">
+              All amounts are in {BASE} — no conversion needed.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {usedCurrencies
+                .filter((c) => c !== BASE)
+                .map((cur) => (
+                  <div key={cur} className="flex items-center gap-2">
+                    <div className="text-xs text-slate-500 whitespace-nowrap">1</div>
+                    <div className="text-xs font-mono font-bold text-slate-700 w-10 tabular-nums">{cur}</div>
+                    <div className="text-xs text-slate-400">=</div>
+                    <input
+                      data-testid={`rate-${cur}`}
+                      type="number"
+                      step="0.0001"
+                      value={form.exchange_rates[cur] ?? 1}
+                      onChange={(e) => setRate(cur, e.target.value)}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-sm text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-[#0B1E36]"
+                    />
+                    <div className="text-xs text-slate-500 font-mono w-10">{BASE}</div>
+                  </div>
+                ))}
+            </div>
+          )}
+          <div className="text-[10px] text-slate-400 mt-3 leading-relaxed">
+            Contoh: 1 USD = 16,500 IDR. Sistem otomatis konversi Subtotal ke Grand Total Currency yang dipilih.
           </div>
         </div>
 
