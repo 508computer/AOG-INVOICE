@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { Anchor, Lock, User } from "lucide-react";
+import { Lock, User } from "lucide-react";
 import { toast } from "sonner";
 
 const LOGO_URL =
@@ -40,8 +40,12 @@ export default function Login() {
       <div className="flex flex-col justify-between p-8 lg:p-16">
         <div>
           <div className="flex items-center gap-3 mb-12">
-            <div className="w-10 h-10 bg-[#0B1E36] flex items-center justify-center rounded-sm">
-              <Anchor className="w-5 h-5 text-amber-500" strokeWidth={2.5} />
+            <div className="w-12 h-12 bg-white border border-slate-200 flex items-center justify-center rounded-sm p-1.5">
+              <img
+                src={LOGO_URL}
+                alt="Arrazzaq Ocean Global"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <div className="font-display font-black text-[#0B1E36] text-base leading-tight tracking-tight">
@@ -153,7 +157,9 @@ export default function Login() {
           </div>
 
           <div className="max-w-md">
-            <img src={LOGO_URL} alt="Arrazzaq Ocean Global" className="w-32 h-32 mb-8 brightness-0 invert opacity-90" />
+            <div className="bg-white/95 rounded-sm p-5 inline-block mb-8 shadow-2xl">
+              <img src={LOGO_URL} alt="Arrazzaq Ocean Global" className="w-28 h-28 object-contain" />
+            </div>
             <div className="font-display text-4xl xl:text-5xl font-black tracking-tight leading-tight mb-4">
               Navigate revenue with precision.
             </div>

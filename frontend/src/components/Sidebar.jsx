@@ -7,9 +7,11 @@ import {
   Settings,
   TrendingUp,
   LogOut,
-  Anchor,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+
+const LOGO_URL =
+  "https://customer-assets.emergentagent.com/job_ac753fe0-5828-47a8-9e17-f0b9d7689f39/artifacts/4g43cxl1_logo.png";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, testid: "nav-dashboard" },
@@ -36,8 +38,12 @@ export default function Sidebar() {
         data-testid="sidebar-brand"
       >
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-amber-500 flex items-center justify-center rounded-sm">
-            <Anchor className="w-5 h-5 text-[#0B1E36]" strokeWidth={2.5} />
+          <div className="w-11 h-11 bg-white flex items-center justify-center rounded-sm p-1.5 flex-shrink-0">
+            <img
+              src={LOGO_URL}
+              alt="Arrazzaq Ocean Global"
+              className="w-full h-full object-contain"
+            />
           </div>
           <div>
             <div className="font-display font-black text-white text-sm leading-tight tracking-tight">
