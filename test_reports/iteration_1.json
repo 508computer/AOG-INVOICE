@@ -1,0 +1,41 @@
+{
+  "summary": "First iteration end-to-end testing of ARRAZZAQ Invoice Management System. 24/24 backend pytests passed covering auth, users CRUD, clients CRUD, exchange rates, invoice creation (multi-currency subtotal computation, invoice number generation INV/KFS/2026/06/NNN, sequence increment), PDF generation/download, company settings, dashboard, and RBAC (staff blocked from users/settings/rates endpoints). Frontend smoke-tested via Playwright: admin login -> dashboard with KPI cards, sidebar navigation (all 6 nav-* testids present), client creation, invoice list + invoice view (all required columns NO/DESCRIPTION/RANK/DATE/QTY/PRICE/AMOUNT plus bank info BRINIDJAXXX & account 044102000096506 visible), invoice form (all expected testids present), and logout. Staff RBAC verified in UI: admin-only sidebar items hidden, direct URLs /users /settings /exchange-rates redirect to /dashboard, edit/delete action buttons not shown on invoice rows.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "InvoiceForm", "issues": ["Date inputs use native browser <input type=date> picker (mm/dd/yyyy in en-US) instead of a styled shadcn Calendar. Functional but inconsistent with the rest of the navy/amber design system. Same applies to Item DATE column which is a free-text 'DD/MM/YYYY' input. Consider consolidating on shadcn DatePicker for consistency."]},
+      {"screen": "InvoiceForm (console warning)", "issues": ["React hydration warning '<span> cannot be a child of <option>'. This is caused by Emergent VE wrapper injecting an x-excluded <span> inside <option> elements (option value=clients map). It's a VE artifact, not a product bug, but worth confirming it does not affect the production build."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "No blocking issues. Optional polish: replace native HTML date inputs in InvoiceForm with shadcn DatePicker for visual consistency.",
+    "Verify the Emergent VE <span>-in-<option> hydration warning is absent in production build (cosmetic console noise only)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~700 lines and mixes all domain routes; consider splitting into routers per resource (users, clients, invoices, settings, dashboard) for maintainability.",
+    "Login endpoint returns the same 401 for unknown user vs inactive user vs wrong password (good for security). is_active=False users get 401 'Invalid credentials' which is fine.",
+    "_get_rate_to() in server.py has a confusing snapshot semantic comment versus implementation (comment says 1 unit = snapshot[currency] units of total_currency, implementation does from/to with snapshot values — works correctly only because total_currency is forced to 1.0 before lookup). Worth adding a unit test for SGD->USD via snapshot to lock this in.",
+    "Invoice list endpoint returns all invoices (sort by created_at desc) with no pagination — fine for now, but will need limit/offset once volume grows.",
+    "PUT /invoices/{id} requires admin (require_admin) which matches RBAC spec (staff cannot edit/delete invoices).",
+    "Frontend uses process.env.REACT_APP_BACKEND_URL consistently (verified in lib/api.js)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_backend.py (new)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% smoke (login, dashboard KPIs, all 6 nav links, client creation, invoice list+view fields, invoice form testids, logout, staff RBAC redirects)"},
+  "test_credentials": "admin/admin123 (admin). Created during testing: uistaff/Staff123! (staff, used for RBAC UI verification) and several teststaff_<uuid> users created by pytest.",
+  "seed_data_creation": "Pytest created: 2 extra invoices INV/KFS/2026/06/002 and INV/KFS/2026/06/003 (June 15 & 20, 2026, USD totals $456.21 and $10.00), 1+ TEST clients (TEST Client xxx, TEST Khalid Faraj Shipping or reused KFS), and one UI staff user 'uistaff' plus pytest staff users 'teststaff_<6hex>'. Exchange rate USD->IDR was updated to 16700 during the test. Company settings phone was set to '+62-21-TEST'. Main agent may want to reset rate to 16500 and clear phone if a clean demo state is desired.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is solid (24/24 pytest pass) and exposes all required endpoints with proper RBAC. /app/backend/tests/test_backend.py is the canonical regression suite — run with: pytest /app/backend/tests/test_backend.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml. Frontend testids match the spec. Date pickers are native HTML date inputs (intentional per current implementation, not shadcn Calendar). Staff UI RBAC fully verified. PDF download is implemented as <a href='/api/invoices/{id}/pdf'> link with download attribute — for Playwright, use expect_download() via async context manager (page.expect_download() as dl_info: await click; dl = await dl_info.value) instead of bare expect_download() coroutine.",
+  "rca of the issue": "No bugs found — first iteration passes all functional acceptance tests defined in the review request."
+}
