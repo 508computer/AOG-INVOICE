@@ -358,23 +358,24 @@ async def _get_rate_to(from_cur: str, to_cur: str, snapshot: dict) -> float:
     return 1.0
 
 
-def _compute_subtotal_sync(items: list, snapshot: dict, total_currency: str) -> float:
-    """Compute subtotal in total_currency using snapshot mapping."""
-    sub = 0.0
+def _compute_subtotal_sync(items: list, snapshot: dict, total_currency: str) -> tuple:
+    """Compute (subtotal_in_total_currency, subtotal_by_currency_dict)."""
+    by_cur: dict = {}
     for it in items:
         qty = float(it.get("quantity") or 0)
         price = float(it.get("price") or 0)
         cur = (it.get("currency") or "USD").upper()
         amount = qty * price
-        if cur == total_currency.upper():
-            sub += amount
+        by_cur[cur] = round(by_cur.get(cur, 0) + amount, 2)
+
+    sub = 0.0
+    total_cur_upper = total_currency.upper()
+    for cur, amt in by_cur.items():
+        if cur == total_cur_upper:
+            sub += amt
         else:
-            # snapshot: 1 <cur> = snapshot[cur] in total_currency
-            if snapshot and cur in snapshot:
-                sub += amount * float(snapshot[cur])
-            else:
-                sub += amount  # fallback (should not happen)
-    return round(sub, 2)
+            sub += amt * float(snapshot.get(cur, 1))
+    return round(sub, 2), by_cur
 
 
 async def _generate_invoice_number(client_id: str, when: datetime) -> str:
@@ -458,7 +459,7 @@ async def create_invoice(payload: InvoiceCreate, current=Depends(get_current_use
     else:
         snapshot = {k.upper(): float(v) for k, v in snapshot.items()}
 
-    subtotal = _compute_subtotal_sync(items, snapshot, payload.total_currency)
+    subtotal, subtotal_by_currency = _compute_subtotal_sync(items, snapshot, payload.total_currency)
     tax_amount = round(subtotal * (payload.tax_percent or 0) / 100.0, 2)
     grand_total = round(subtotal + tax_amount - (payload.discount_amount or 0), 2)
 
@@ -472,6 +473,7 @@ async def create_invoice(payload: InvoiceCreate, current=Depends(get_current_use
     doc["invoice_number"] = invoice_number
     doc["exchange_rates"] = snapshot
     doc["subtotal"] = subtotal
+    doc["subtotal_by_currency"] = subtotal_by_currency
     doc["tax_amount"] = tax_amount
     doc["grand_total"] = grand_total
     doc["created_by"] = current["sub"]
@@ -524,12 +526,13 @@ async def update_invoice(invoice_id: str, payload: InvoiceUpdate, _=Depends(requ
         if cur not in snapshot:
             snapshot[cur] = await _get_rate_to(cur, total_cur, {})
 
-    subtotal = _compute_subtotal_sync(items, snapshot, total_cur)
+    subtotal, subtotal_by_currency = _compute_subtotal_sync(items, snapshot, total_cur)
     tax_amount = round(subtotal * float(merged.get("tax_percent") or 0) / 100.0, 2)
     grand_total = round(subtotal + tax_amount - float(merged.get("discount_amount") or 0), 2)
 
     update["exchange_rates"] = snapshot
     update["subtotal"] = subtotal
+    update["subtotal_by_currency"] = subtotal_by_currency
     update["tax_amount"] = tax_amount
     update["grand_total"] = grand_total
     update["updated_at"] = now_iso()

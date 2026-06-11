@@ -122,20 +122,26 @@ export default function InvoiceForm() {
   // Computed totals
   const computed = useMemo(() => {
     const total = form.total_currency.toUpperCase();
-    let subtotal = 0;
+    // Per-currency subtotals (in each item's native currency)
+    const byCurrency = {};
     form.items.forEach((it) => {
-      const amount = (Number(it.quantity) || 0) * (Number(it.price) || 0);
       const cur = (it.currency || "USD").toUpperCase();
+      const amount = (Number(it.quantity) || 0) * (Number(it.price) || 0);
+      byCurrency[cur] = (byCurrency[cur] || 0) + amount;
+    });
+    // Converted subtotal in total_currency
+    let subtotal = 0;
+    Object.entries(byCurrency).forEach(([cur, amt]) => {
       if (cur === total) {
-        subtotal += amount;
+        subtotal += amt;
       } else {
         const r = Number(form.exchange_rates[cur]) || 0;
-        subtotal += amount * r;
+        subtotal += amt * r;
       }
     });
     const tax = (subtotal * (Number(form.tax_percent) || 0)) / 100;
     const grand = subtotal + tax - (Number(form.discount_amount) || 0);
-    return { subtotal, tax, grand };
+    return { subtotal, tax, grand, byCurrency };
   }, [form]);
 
   const setItem = (idx, key, val) => {
@@ -460,26 +466,49 @@ export default function InvoiceForm() {
         {/* Totals */}
         <div className="bg-white border border-slate-200 rounded-sm p-5">
           <h3 className="font-display font-bold text-sm text-slate-900 mb-4">Totals</h3>
-          <div className="mb-4">
-            <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1.5">Total Currency</label>
-            <select
-              data-testid="form-total-currency"
-              value={form.total_currency}
-              onChange={(e) => setForm({ ...form, total_currency: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0B1E36]"
-            >
-              {CURRENCY_OPTIONS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
 
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Subtotal</span>
-              <span className="tabular-nums font-semibold">{formatMoney(computed.subtotal, form.total_currency)}</span>
+            {/* Subtotal breakdown per currency */}
+            <div>
+              <div className="text-slate-500 mb-1.5">Subtotal</div>
+              <div data-testid="subtotal-breakdown" className="space-y-1 pl-2 border-l-2 border-slate-200">
+                {Object.entries(computed.byCurrency).length === 0 && (
+                  <div className="text-xs text-slate-400">No items yet</div>
+                )}
+                {Object.entries(computed.byCurrency).map(([cur, amt]) => (
+                  <div key={cur} className="flex items-center justify-between text-xs">
+                    <span className="font-mono font-semibold text-slate-600">{cur}</span>
+                    <span className="tabular-nums font-semibold text-slate-900">
+                      {formatMoney(amt, cur)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-2 mt-3">
+              <label className="block text-[10px] uppercase tracking-widest font-bold text-slate-500 mb-1.5">
+                Grand Total Currency
+              </label>
+              <select
+                data-testid="form-total-currency"
+                value={form.total_currency}
+                onChange={(e) => setForm({ ...form, total_currency: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-sm text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0B1E36] mb-2"
+              >
+                {CURRENCY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-500">Converted Subtotal</span>
+              <span className="tabular-nums font-semibold text-slate-900">
+                {formatMoney(computed.subtotal, form.total_currency)}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
@@ -507,7 +536,10 @@ export default function InvoiceForm() {
               />
             </div>
             <div className="pt-3 mt-3 border-t border-slate-200 flex justify-between items-baseline">
-              <span className="font-display font-bold text-slate-900">GRAND TOTAL</span>
+              <div>
+                <div className="font-display font-bold text-slate-900">GRAND TOTAL</div>
+                <div className="text-[10px] uppercase tracking-widest text-slate-500">in {form.total_currency}</div>
+              </div>
               <span data-testid="form-grand-total" className="font-display font-black text-xl text-[#0B1E36] tabular-nums">
                 {formatMoney(computed.grand, form.total_currency)}
               </span>

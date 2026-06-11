@@ -171,6 +171,7 @@ class InvoiceOut(InvoiceBase):
     id: str
     invoice_number: str
     subtotal: float = 0  # in total_currency
+    subtotal_by_currency: dict = Field(default_factory=dict)  # native subtotals per currency
     tax_amount: float = 0
     grand_total: float = 0
     created_by: str  # user_id

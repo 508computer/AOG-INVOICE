@@ -237,9 +237,21 @@ export default function InvoiceView() {
             </div>
           </div>
           <div className="col-span-2 space-y-2 text-sm">
-            <div className="flex justify-between border-b border-slate-200 pb-1.5">
-              <span className="text-slate-500">Subtotal</span>
-              <span className="tabular-nums font-semibold">{formatMoney(invoice.subtotal, total)}</span>
+            {/* Subtotal breakdown by currency */}
+            <div className="border-b border-slate-200 pb-1.5">
+              <div className="text-slate-500 mb-1">Subtotal</div>
+              <div className="space-y-0.5 pl-2 border-l-2 border-slate-200">
+                {Object.entries(invoice.subtotal_by_currency || {}).map(([cur, amt]) => (
+                  <div key={cur} className="flex justify-between text-xs">
+                    <span className="font-mono font-semibold text-slate-600">{cur}</span>
+                    <span className="tabular-nums font-semibold text-slate-900">{formatMoney(amt, cur)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-500">Converted ({total})</span>
+              <span className="tabular-nums">{formatMoney(invoice.subtotal, total)}</span>
             </div>
             {invoice.tax_percent ? (
               <div className="flex justify-between border-b border-slate-200 pb-1.5">

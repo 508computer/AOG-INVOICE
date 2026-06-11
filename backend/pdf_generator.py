@@ -305,10 +305,20 @@ def generate_invoice_pdf(
     discount = float(invoice.get("discount_amount") or 0)
     grand_total = float(invoice.get("grand_total") or 0)
     tax_pct = float(invoice.get("tax_percent") or 0)
+    by_cur = invoice.get("subtotal_by_currency") or {}
 
-    totals_rows = [
-        ["SUBTOTAL", _fmt_money(subtotal, total_cur)],
-    ]
+    totals_rows = []
+    # Subtotal — show per-currency breakdown
+    if by_cur:
+        first = True
+        for cur, amt in by_cur.items():
+            label = "SUBTOTAL" if first else ""
+            totals_rows.append([label, _fmt_money(float(amt), cur)])
+            first = False
+        totals_rows.append([f"CONVERTED ({total_cur})", _fmt_money(subtotal, total_cur)])
+    else:
+        totals_rows.append(["SUBTOTAL", _fmt_money(subtotal, total_cur)])
+
     if tax_pct or tax_amount:
         totals_rows.append([f"TAX ({tax_pct:g}%)", _fmt_money(tax_amount, total_cur)])
     if discount:
